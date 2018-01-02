@@ -1,15 +1,15 @@
 <html>
 <head>
   
-<script src="../lib/d3/d3.js"></script>
-<script src="../lib/numeric-1.2.6.js"></script>
-<script src="../lib/math.js"></script>
-<script src="../lib/my/linalg.js"></script>
+<script src="lib/d3/d3.js"></script>
+<script src="lib/numeric-1.2.6.js"></script>
+<script src="lib/math.js"></script>
+<script src="lib/my/linalg.js"></script>
 
 <script src="data.js"></script>
 
 <link rel="stylesheet" TYPE="text/css" href="style.css">
-<link href="https://fonts.googleapis.com/css?family=Oxygen" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css?family=Oxygen:400,700" rel="stylesheet">
 
 
 </head>
@@ -71,7 +71,8 @@ function redraw(){
     .attr('height', height);
     var layerRects = computeLayerRectangles(width, height, layers);
 
-    for (var layer of layers) {
+    for (var i=0;i<layers.length;i++){
+        var layer = layers[i];
 
         var layerRect = layerRects[layer];
         var selector = '.layer'+layer;
@@ -84,12 +85,20 @@ function redraw(){
         var layerRoot = svg.selectAll(selector)
         .attr('transform', translate({x:layerRect.x, y:layerRect.y}));
 
+        // if(layer == 0){
+        //     var title = data[0].layerNames[layer];
+        // }else{
+        //     var title = data[0].layerNames.slice(layers[i-1]+1, layer+1).join(', ');
+        // }
+
+        var title = null;//data[0].layerNames[layer];
         drawLayer(layerRoot, {
             data:{
                 X:data[stepIndex].activations[0],
                 Y:data[stepIndex].activations[layer],
                 y_:data[stepIndex].y_,
             }, 
+            title: title,
             //using the layout of last training step
             layout: data[data.length-1].layouts[layer],
             width:layerRect.width, 
@@ -100,6 +109,8 @@ function redraw(){
 
 
 function drawLayer(layerRoot, spec){
+
+
 
     //draw a bounding rect
     layerRoot.selectAll('rect.boundingBox')
@@ -139,6 +150,21 @@ function drawLayer(layerRoot, spec){
     .attr('transform', d=>translate({x:d.rect.x, y:d.rect.y}));
 
     nodes.each(drawNode);
+
+    //title of layer
+    if(spec.title !== null){
+        layerRoot.selectAll('text.title')
+        .data([spec.title])
+        .enter()
+        .append('text')
+        .attr('class','title');
+        layerRoot.selectAll('text.title')
+        .text(d=>d)
+        .attr('transform', 'translate(' + spec.width/2 + ',' + (-10) + ')' )
+        .attr('text-anchor', 'middle')
+        .style('font-weight', 'regular');
+    }
+
 
 }
 

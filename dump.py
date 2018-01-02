@@ -96,7 +96,8 @@ for step in range(n):
             'y_': y_.data.numpy().ravel().tolist(),
             'weights':'null',
             'layouts': layouts,
-            'loss': loss
+            'loss': loss,
+            'layerNames': ['Input'] + [repr(getattr(net, str(i))) for i in range(len(net.activations)-1)]
         }
         data.append(d)
     
