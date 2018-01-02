@@ -1,0 +1,304 @@
+<html>
+<head>
+  
+<script src="../lib/d3/d3.js"></script>
+<script src="../lib/numeric-1.2.6.js"></script>
+<script src="../lib/math.js"></script>
+<script src="../lib/my/linalg.js"></script>
+
+<script src="data.js"></script>
+
+<link rel="stylesheet" TYPE="text/css" href="style.css">
+<link href="https://fonts.googleapis.com/css?family=Oxygen" rel="stylesheet">
+
+
+</head>
+<body>
+
+<div>
+<div class="slideContainer">
+<span id='stepIndexTitle'>training step:</span>
+<input type="range" class="slider" value=0 id="stepRange">
+<span id='stepIndex'>0</span>
+
+</div>
+
+<svg id="plot"></svg>
+</div>
+
+<script>
+'use strict';
+// slider attributes
+initSlider();
+
+function initSlider(){
+    d3.select('#stepRange')
+    .attr('min', 0)
+    .attr('max', data.length-1)
+    .on('input',function(){
+        var value = d3.select(this).node().value;
+        stepIndex = value;
+        d3.select('#stepIndex').text('step '+value+', loss: '+Math.floor(data[stepIndex].loss*1e5)/1e5 );
+        redraw();
+
+    });
+
+}
+
+window.onload = rebuild;
+window.onresize = rebuild;
+
+var width = 500;
+var height = 500;
+var stepIndex = 0;
+
+// neural layers of interest
+var layers = d3.range(data[0].activations.length).filter(d=>d%2==0 || d==data[0].activations.length-1);
+
+
+function rebuild(){
+    width = window.innerWidth-100;
+    height = window.innerHeight*2-100;
+    console.log('window resize:', width + ' x ' + height);
+    redraw();
+};
+
+
+function redraw(){
+    
+    var svg = d3.select('#plot');
+    svg.attr('width', width)
+    .attr('height', height);
+    var layerRects = computeLayerRectangles(width, height, layers);
+
+    for (var layer of layers) {
+
+        var layerRect = layerRects[layer];
+        var selector = '.layer'+layer;
+        svg.selectAll(selector)
+        .data([1])
+        .enter()
+        .append('g')
+        .attr('class', 'layer'+layer);
+
+        var layerRoot = svg.selectAll(selector)
+        .attr('transform', translate({x:layerRect.x, y:layerRect.y}));
+
+        drawLayer(layerRoot, {
+            data:{
+                X:data[stepIndex].activations[0],
+                Y:data[stepIndex].activations[layer],
+                y_:data[stepIndex].y_,
+            }, 
+            //using the layout of last training step
+            layout: data[data.length-1].layouts[layer],
+            width:layerRect.width, 
+            height:layerRect.height
+        });
+    }
+}
+
+
+function drawLayer(layerRoot, spec){
+
+    //draw a bounding rect
+    layerRoot.selectAll('rect.boundingBox')
+    .data([spec])
+    .enter()
+    .append('rect')
+    .attr('class','boundingBox');
+
+    layerRoot.selectAll('rect.boundingBox')
+    .attr('x', spec.x)
+    .attr('y', spec.y)
+    .attr('width', spec.width)
+    .attr('height', spec.height)
+    .attr('fill', '#ddd');
+
+
+
+    var selector = '.node';
+    var neuronCount = spec.data.Y[0].length;
+
+    var layout = spec.layout;
+    var nodeRects = computeNodeRectangles(spec.width, spec.height, neuronCount, layout);
+
+    layerRoot.selectAll(selector)
+    .data(nodeRects)
+    .enter()
+    .append('g')
+    .attr('class', (d,i)=>'node n'+i);
+
+    spec.data.x = spec.data.X.map(d=>d[0]);
+    var nodesData = makeNodesData(spec.data, nodeRects);
+
+    layerRoot.selectAll(selector)
+    .data(nodesData);
+
+    var nodes = layerRoot.selectAll(selector)
+    .attr('transform', d=>translate({x:d.rect.x, y:d.rect.y}));
+
+    nodes.each(drawNode);
+
+}
+
+
+
+
+function drawNode(data){
+    var gRoot = d3.select(this);
+
+    var rectData = gRoot.data()[0].rect;
+
+    gRoot.selectAll('rect.boundingBox')
+    .data([rectData])
+    .enter()
+    .append('rect')
+    .attr('class','boundingBox');
+
+    gRoot.selectAll('rect.boundingBox')
+    .attr('x', 0)
+    .attr('y', 0)
+    .attr('width', d=>d.width)
+    .attr('height', d=>d.height)
+    .attr('fill', '#ccc');
+
+
+    var fLine = d3.line()
+    .x(d=>data.sx(d.x))
+    .y(d=>data.sy(d.y));
+
+    gRoot
+    .selectAll('path')
+    .data([data.xy_, data.xy])
+    .enter()
+    .append('path');
+
+    gRoot
+    .selectAll('path')
+    .attr('fill', 'none')
+    .attr('stroke', function(d){
+        if(d==data.xy){
+            return '#5e3c99';
+        }else{
+            return '#aaa';
+        }
+    })
+    .attr('stroke-width',function(d){
+        if(d==data.xy){
+            return 5;
+        }else{
+            return 7;
+        }
+    })
+    .attr('d', d=>fLine(d));
+
+}
+
+
+function makeNodesData(data, rects){
+    var xmax = data.X.max();
+    var xmin = data.X.min();
+
+    // var ymin = data.Y.min();
+    // var ymax = data.Y.max();
+    var ymin = -3;
+    var ymax = 3;
+
+
+    ymin = Math.min(ymin, data.y_.min());
+    ymax = Math.max(ymax, data.y_.max());
+
+    var sx = d3.scaleLinear().domain([xmin, xmax]).range([0,rects[0].width]);
+    var sy = d3.scaleLinear().domain([ymin, ymax]).range([rects[0].height, 0]);
+
+    var res = [];
+    for (var i = 0; i < rects.length; i++) {
+        var xy = data.x.map(function(d,j){
+            return {x:d, y:data.Y[j][i]};
+        });
+
+        var xy_ = data.x.map(function(d,j){
+            return {x:d, y:data.y_[j]};
+        });
+
+        res.push({
+            rect: rects[i],
+            xy: xy,
+            sx:sx,
+            sy:sy,
+            xy_:xy_
+        });
+    }
+    return res;
+}
+
+
+function computeLayerRectangles(width, height, layers){
+    //equal partition
+    var margin = 0.02*Math.min(width, height);
+
+    var w = width/layers.length;
+    var h = height;
+
+    var x = margin;
+    var res = {};
+    for (var l of layers){
+        res[l] = {x:x, y:margin, width:w-2*margin, height:h-2*margin};
+        x+=w;
+    }
+    return res;
+    
+}
+
+
+//grid layout
+function computeNodeRectangles(width, height, count, layout){
+    if(layout=='null'){
+        var order = d3.range(count);
+    }else{
+        //var order = d3.range(count);
+        var order = d3.range(count).sort(function(a,b){
+            return d3.ascending(layout[a][0], layout[b][0]);
+        });
+    }
+    var rows = Math.ceil(Math.sqrt(height/width * count));
+    var cols = Math.ceil(Math.sqrt(width/height * count));
+
+    if( (rows-1)*(cols-1) >= count ){
+        rows = rows-1;
+        cols = cols-1;
+    }else if( rows*(cols-1) >= count ){
+        cols = cols-1;
+    }else if( (rows-1)*cols >= count ){
+        rows = rows-1;
+    }
+
+    var side = Math.min(width/cols, height/rows);
+    var margin = side*0.05;
+
+    var y = margin; //(height-(h+marginBottom)*count)/2;
+    var res = [];
+    for (var i=0; i<count; i++){
+        res.push({
+            x: order.indexOf(i)%cols * side+margin,
+            y: Math.floor(order.indexOf(i)/cols) * side+margin,
+            width: side-2*margin,
+            height: side-2*margin
+        });
+    }
+    return res;
+    
+}
+
+
+function translate(spec){
+    return 'translate('+spec.x+','+spec.y+')';
+}
+
+
+
+
+</script>
+</body>
+</html>
